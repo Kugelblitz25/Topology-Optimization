@@ -1,6 +1,5 @@
 from backend import Simulation, plot
 import numpy as np
-from scipy.optimize import minimize
 
 corners = [[0, 0],
            [10, 0],
@@ -16,7 +15,7 @@ dA = A/(30*30)
 
 g = dA*9.800
 
-E0 = 190e5
+E0 = 190e9
 Emin = 100
 penal = 4
 nu = 0.3
@@ -24,17 +23,16 @@ rho = 7750
 
 maxVol = 50
 
-sim = Simulation(corners, 30)
+sim = Simulation(corners, 70)
 sim.createFunctions()
 topBoundary = lambda x: np.isclose(x[1], 15)
-sideBoundary = lambda x: np.isclose(x[0], 10)
+corner = lambda x: np.isclose(x[0], 10) & np.isclose(x[1], 0)
 x = np.ones(sim.domain.topology.index_map(2).size_local)
+sim.fixedBoundary(topBoundary)
+sim.applyForce(corner, [0, -1e9])
 
 def obj(x):
     sim.density.interpolate(lambda _: x)
-    sim.applyBodyForce(g, rho)
-    sim.fixedBoundary(topBoundary)
-    sim.fixedBoundary(sideBoundary)
     sim.constituentEqns(Emin, E0, penal, nu)
     sim.createLP()
     uh = sim.problem.solve()
@@ -43,17 +41,8 @@ def obj(x):
     comp = sim.compliance(uh)
     print(f"Volume Fraction: {volFrac}")
     print(f"Compliance: {comp}")
-    dV = maxVol - volFrac
-    if dV >= 0:
-        penalty = 0
-    else:
-        penalty = 4 * dV**2
+    plot(sim.domain, uh, sim.vm)
 
-    return comp + penalty
+obj(x)
 
-bounds = [(0, 1)] * (sim.domain.topology.index_map(2).size_local**2)
-print(obj(x))
-
-# result = minimize(obj, x, method='SLSQP', bounds=bounds, constraints={'type': 'ineq', 'fun': lambda x: maxVol-sum(x)/len(x)})
-
-# plot(sim.domain, uh, sim.vm)
+print(x.shape)

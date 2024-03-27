@@ -24,11 +24,9 @@ from ufl import (TrialFunction,
 from mshr import Polygon, generate_mesh
 from dolfinx.fem.petsc import LinearProblem
 import numpy as np
-from dolfinx.geometry import (bb_tree, 
-                              compute_closest_entity, 
-                              create_midpoint_tree)
 
-def plot(msh, displacements, stresses):
+
+def plot(msh, displacements, stresses, init=False):
     if pyvista.OFF_SCREEN:
         pyvista.start_xvfb(wait=0.1)
 
@@ -37,7 +35,8 @@ def plot(msh, displacements, stresses):
     topology, cell_types, geometry = dolfinx.plot.vtk_mesh(msh, msh.topology.dim)
     grid = pyvista.UnstructuredGrid(topology, cell_types, geometry)
 
-    # p.add_mesh(grid, show_edges=True)
+    if init:
+        p.add_mesh(grid)
 
     grid["u"] = displacements.x.array.reshape((geometry.shape[0], 2))
     z = np.zeros(len(grid['u']))
@@ -46,7 +45,7 @@ def plot(msh, displacements, stresses):
 
     warped.cell_data["VonMises"] = stresses.vector.array
     warped.set_active_scalars("VonMises")
-    p.add_mesh(warped, show_edges=True, clim=[0, max(stresses.vector.array)])
+    p.add_mesh(warped, clim=[0, 0.3*max(stresses.vector.array)], cmap='jet')
     p.add_camera_orientation_widget()
 
     if not pyvista.OFF_SCREEN:
@@ -83,15 +82,11 @@ class Simulation:
         self.density = Function(self.U, name="Density")
         self.vm = Function(self.U, name="Von Mises Stress")
 
-    def applyBodyForce(self, g, rho):
+    def applyForce(self, f, force):
         def bodyForce(x):
-            x0 = x.T
-            tree = bb_tree(self.domain, self.domain.geometry.dim)
-            entities = np.arange(self.domain.topology.index_map(2).size_local, dtype='int32')
-            midTree = create_midpoint_tree(self.domain, 2, entities)
-            cells = compute_closest_entity(tree, midTree, self.domain, x0)
-            d = rho*self.density.eval(x0, cells)[:, 0]
-            return np.stack([0*d, -g*d], axis=0)
+            c = f(x)
+            T = np.stack([force[0]*c, force[1]*c], axis=0)
+            return T
 
         self.B.interpolate(bodyForce)
 

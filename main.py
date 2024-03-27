@@ -68,8 +68,7 @@ def plot(msh, uh, stresses):
 
     warped.cell_data["VonMises"] = stresses.vector.array
     warped.set_active_scalars("VonMises")
-    plt = p.add_mesh(warped, show_edges=True, clim=[
-                     0, max(stresses.vector.array)])
+    plt = p.add_mesh(warped, show_edges=True)
     plt = p.add_camera_orientation_widget()
     if not pyvista.OFF_SCREEN:
         p.show()
@@ -102,7 +101,12 @@ def bodyForce(x):
     midTree = create_midpoint_tree(domain, 2, entities)
     cells = compute_closest_entity(tree, midTree, domain, x0)
     d = density.eval(x0, cells)[:, 0]
-    return np.stack([0*d, -g*d], axis=0)
+    def oncorner(x):
+        return np.isclose(x[0], 10) & np.isclose(x[1], 0)
+    c = oncorner(x)
+    B = np.stack([0*d, -g*d], axis=0)
+    T = np.stack([0*c, -1e6*c], axis=0)
+    return T
 
 f.interpolate(bodyForce)
 
