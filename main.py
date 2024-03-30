@@ -64,7 +64,7 @@ def plot(msh, uh, stresses):
     grid["u"] = uh.x.array.reshape((geometry.shape[0], 2))
     z = np.zeros(len(grid['u']))
     grid['u'] = np.c_[grid["u"], z]
-    warped = grid.warp_by_vector("u", factor=1)
+    warped = grid.warp_by_vector("u", factor=0)
 
     warped.cell_data["VonMises"] = stresses.vector.array
     warped.set_active_scalars("VonMises")
@@ -76,7 +76,7 @@ def plot(msh, uh, stresses):
         print("Unable to show plot.")
 
 
-domain = createPolygonalMesh(corners, 30)
+domain = createPolygonalMesh(corners, 70)
 
 V = fem.VectorFunctionSpace(domain, ("Lagrange", 1))
 T = fem.FunctionSpace(domain, ("DG", 0))
@@ -85,7 +85,7 @@ u = ufl.TrialFunction(V)
 v = ufl.TestFunction(V)
 f = fem.Function(V, name="Body Force")
 
-densityArr = 7750*np.ones(domain.topology.index_map(2).size_local)
+densityArr = 7750*(np.arange(domain.topology.index_map(2).size_local)>=1000)
 density.interpolate(lambda _: densityArr)
 
 fdim = domain.topology.dim - 1
@@ -148,4 +148,4 @@ print(f"Volume fraction: {VOL}")
 compliance = MPI.COMM_WORLD.allreduce(fem.assemble_scalar(fem.form(ufl.inner(sigma(uh), epsilon(uh)) * ufl.dx)),op=MPI.SUM)
 print(f"Compliance: {compliance}")
 
-plot(domain, uh, stresses)
+plot(domain, uh, density)

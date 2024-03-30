@@ -12,12 +12,12 @@ import pyvista
 from dolfinx.fem import (VectorFunctionSpace, 
                          FunctionSpace, 
                          Function, 
-                         Constant,
+                         Constant, assemble_vector,
                          locate_dofs_topological,
                          dirichletbc, Expression,
                          assemble_scalar, form)
 from dolfinx.mesh import locate_entities_boundary
-from ufl import (TrialFunction,
+from ufl import (TrialFunction, CellVolume,
                  TestFunction, Measure, dot,
                  sym, grad, dx, inner, tr,
                  nabla_div, Identity, sqrt)
@@ -45,7 +45,26 @@ def plot(msh, displacements, stresses, init=False):
 
     warped.cell_data["VonMises"] = stresses.vector.array
     warped.set_active_scalars("VonMises")
-    p.add_mesh(warped, clim=[0, 0.3*max(stresses.vector.array)], cmap='jet')
+    p.add_mesh(warped,clim=[0, 0.3*max(stresses.vector.array)], cmap='jet')
+    p.add_camera_orientation_widget()
+
+    if not pyvista.OFF_SCREEN:
+        p.show()
+    else:
+        print("Unable to show plot.")
+
+def plotDensity(msh, density, lim=[0,1]):
+    if pyvista.OFF_SCREEN:
+        pyvista.start_xvfb(wait=0.1)
+
+    p = pyvista.Plotter()
+
+    topology, cell_types, geometry = dolfinx.plot.vtk_mesh(msh, msh.topology.dim)
+    grid = pyvista.UnstructuredGrid(topology, cell_types, geometry)
+
+    grid.cell_data["VonMises"] = 1-density.vector.array
+    # grid.set_active_scalars("VonMises")
+    p.add_mesh(grid, cmap='gray', clim=lim)
     p.add_camera_orientation_widget()
 
     if not pyvista.OFF_SCREEN:
@@ -81,6 +100,7 @@ class Simulation:
         self.T = Constant(self.domain, dolfinx.default_scalar_type((0, 0)))
         self.density = Function(self.U, name="Density")
         self.vm = Function(self.U, name="Von Mises Stress")
+        self.complianceArr = Function(self.U, name="Compliance")
 
     def applyForce(self, f, force):
         def bodyForce(x):
@@ -113,16 +133,18 @@ class Simulation:
         return VOL
     
     def compliance(self, u):
-        return MPI.COMM_WORLD.allreduce(assemble_scalar(form(inner(self.sigma(u), self.eps(u)) * dx)),op=MPI.SUM)
+        comp = MPI.COMM_WORLD.allreduce(assemble_scalar(form(inner(self.eps(u), self.sigma(u)) * dx)),op=MPI.SUM)
+        return comp
 
     def createLP(self):
         ds = Measure('ds', domain=self.domain)
         a = inner(self.sigma(self.u), self.eps(self.v)) * dx
         L = dot(self.B, self.v) * dx + dot(self.T, self.v) * ds
 
-        print("Formulation Completed.")
         self.problem = LinearProblem(a, L, bcs=self.bcs, petsc_options={"ksp_type": "preonly", "pc_type": "lu"})
 
     def updateStress(self, u):
         stress_expr = Expression(self.von_Mises(u), self.U.element.interpolation_points())
+        comp_expr = Expression(inner(self.eps(u), self.sigma(u)), self.U.element.interpolation_points())
+        self.complianceArr.interpolate(comp_expr)
         self.vm.interpolate(stress_expr)
