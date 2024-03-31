@@ -95,6 +95,8 @@ u_D = np.array([0, 0], dtype=dolfinx.default_scalar_type)
 bc = fem.dirichletbc(u_D, fem.locate_dofs_topological(V, fdim, boundary_facets), V)
 
 def bodyForce(x):
+    print(x[0], x[1])
+    print(domain.topology.connectivity(domain.topology.dim, 0).array)
     x0 = x.T
     tree = bb_tree(domain, domain.geometry.dim)
     entities = np.arange(domain.topology.index_map(2).size_local, dtype='int32')

@@ -104,6 +104,8 @@ class Simulation:
 
     def applyForce(self, f, force):
         def bodyForce(x):
+            self.x=x[0]
+            self.y=x[1]
             c = f(x)
             T = np.stack([force[0]*c, force[1]*c], axis=0)
             return T

@@ -13,9 +13,9 @@ corners = [[0, 0],
 #            [0, 15]]
 
 # corners = [[0, 0],
-#            [15, 0],
-#            [15, 15],
-#            [0, 15]]
+#            [20, 0],
+#            [20, 5],
+#            [0, 5]]
 
 L = 15
 W = 10
@@ -29,10 +29,17 @@ rho = 7750
 sim = Simulation(corners, 100)
 sim.createFunctions()
 topBoundary = lambda x: np.isclose(x[1], 15)
+# lefCorner = lambda x: np.isclose(x[0], 0) & (x[1]<=1)
+# rightCorner = lambda x: np.isclose(x[0], 20) & (x[1]<=1)
 corner = lambda x: np.isclose(x[0], 10) & np.isclose(x[1], 0)
 x = np.ones(sim.domain.topology.index_map(2).size_local)
 sim.fixedBoundary(topBoundary)
+# sim.fixedBoundary(lefCorner)
+# sim.fixedBoundary(rightCorner)
 sim.applyForce(corner, [0, -1e9])
+xCoords = sim.x
+yCoords = sim.y
+
 
 def obj(x, plt=False):
     global uh
@@ -52,18 +59,19 @@ def gradCalc(sim: Simulation):
     num = -penal*(E0-Emin)*x**(penal-1)*C 
     denom = Emin + x**penal*(E0-Emin)
     grad = num/denom 
-    grad = 0.01+1e-2*(grad-grad.min())/(grad.max()-grad.min())
+    grad = (grad-grad.min())/(grad.max()-grad.min())
     return grad
 
-
-
-for _ in range(20):
+for i in range(10):
     vol, comp = obj(x)
-    print(vol, comp)
+    print(f"Iteration: {i+1}  Volume Fraction: {vol}, Compliance: {comp}")
     if vol <=50:
         break
-    grad = gradCalc(sim)
-    x = -np.log(grad)>3.913
+    grad = gradCalc(sim)**1000
+    x -= 0.1*grad
+    mask = x>=0.4
+    x = np.where(mask, x, 0)
 
 vol, comp = obj(x, True)
+
 plotDensity(sim.domain, sim.density)
