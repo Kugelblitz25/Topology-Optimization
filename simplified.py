@@ -1,9 +1,10 @@
 from backend import Simulation, plot, plotDensity
 import numpy as np
+import matplotlib.pyplot as plt
 
 corners = [[0, 0],
-           [10, 0],
-           [10, 5],
+           [15, 0],
+           [15, 5],
            [5, 5],
            [5, 15],
            [0, 15]]
@@ -27,11 +28,12 @@ nu = 0.3
 rho = 7750
 
 sim = Simulation(corners, 100)
+
 sim.createFunctions()
 topBoundary = lambda x: np.isclose(x[1], 15)
 # lefCorner = lambda x: np.isclose(x[0], 0) & (x[1]<=1)
 # rightCorner = lambda x: np.isclose(x[0], 20) & (x[1]<=1)
-corner = lambda x: np.isclose(x[0], 10) & np.isclose(x[1], 0)
+corner = lambda x: np.isclose(x[0], 15) & np.isclose(x[1], 5)
 x = np.ones(sim.domain.topology.index_map(2).size_local)
 sim.fixedBoundary(topBoundary)
 # sim.fixedBoundary(lefCorner)
@@ -63,47 +65,39 @@ def gradCalc(sim: Simulation):
     # print(grad)
     return grad
 
+R = 0.5
+sigma = R/3
+
+def filter(i):
+    mask = (coord[i,0]-R<=coord[:,0]) & (coord[:,0]<=coord[i,0]+R) & (coord[i,1]-R<=coord[:,1]) & (coord[:,1]<=coord[i,1]+R)
+    y = np.where(mask, x, 0)
+    weight = np.exp(-((coord[:,0]-coord[i,0])**2+(coord[:,1]-coord[i,1])**2)/(2*sigma**2))
+    weight = weight/weight.sum()
+    return (y*weight).sum()
+
+filter = np.vectorize(filter)
+
 n_iters = 50
 for i in range(n_iters):
     vol, comp = obj(x)
     print(f"Iteration: {i+1}  Volume Fraction: {vol}, Compliance: {comp}")
     if vol <=50:
         break
-
-    # for j in range(len(sim.density.vector.array)):
-    #     if sim.density.vector.array[j] < 1:
-    #         sim.density.vector.array[j] = 0
-    if i > n_iters/4: 
-        for j in range(len(x)):
-            if x[j] < 0.7 and x[j] >0.5:
-                x[j] = 0
-
-    grad = gradCalc(sim)**1000
+    grad = gradCalc(sim)**200
     x -= 0.1*grad
-    mask = x>=0.4
-    x = np.where(mask, x, 0)
+    x = np.maximum(0, x)
+    x = (x-x.min())/(x.max()-x.min())
+    x = filter(np.arange(len(x)))
 
-
+data = np.vstack([coord[:,0], coord[:,1], x])
+np.save('data', data)
+x = (x>=0.7).astype('float64')
 vol, comp = obj(x, True)
+plotDensity(sim.domain, sim.density, )
 
-plotDensity(sim.domain, sim.density)
-print(type(sim.density), type(sim.domain))
-
-# print(sim.density.vector.array)
-# print(type(sim.density.vector.array))
-
-# print(sim.density.vector.array.shape)
-
-# with open('density_array.txt', 'w') as f:
-#     for i in sim.density.vector.array:
-#         f.write(str(i) + '\n')
-
-# for i in range(len(sim.density.vector.array)):
-#     if sim.density.vector.array[i] < 0.9:
-#         sim.density.vector.array[i] = 0
-
-# with open('density_array_updated.txt', 'w') as f:
-#     for i in sim.density.vector.array:
-#         f.write(str(i) + '\n')
-
-# plotDensity(sim.domain, sim.density)
+fig, axes = plt.subplots(10, 5, figsize=(20,40), sharex=True)
+for p in range(1,6):
+    for t in range(1,11):
+        axes[t-1][p-1].scatter(coord[:,0], coord[:,1], c=(x**p)<t/10, marker='.', cmap='gray')
+        axes[t-1][p-1].set_title(f'power = {p}, threshold = {t/10}')
+plt.show()

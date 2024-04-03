@@ -16,7 +16,7 @@ from dolfinx.fem import (VectorFunctionSpace,
                          locate_dofs_topological,
                          dirichletbc, Expression,
                          assemble_scalar, form)
-from dolfinx.mesh import locate_entities_boundary
+from dolfinx.mesh import locate_entities_boundary, compute_midpoints
 from ufl import (TrialFunction, CellVolume,
                  TestFunction, Measure, dot,
                  sym, grad, dx, inner, tr,
@@ -75,7 +75,6 @@ def plotDensity(msh, density, lim=[0,1]):
 class Simulation:
     def __init__(self, corners, meshDensity = 15) -> None:
         self.corners = corners
-        self.locs = []
         self.domain = self.createPolygonalMesh(corners, meshDensity)
         self.V = VectorFunctionSpace(self.domain, ("Lagrange", 1))
         self.U = FunctionSpace(self.domain, ("DG", 0))
@@ -86,16 +85,13 @@ class Simulation:
         domain = Polygon(corners)
         domain = generate_mesh(domain, meshDensity)
 
-        for cell in dolfin.cells(domain,):
-            self.locs.append((cell.midpoint().x(), cell.midpoint().y()))
-        
-        self.locs = np.array(self.locs)
-
         with dolfin.XDMFFile(MPI.COMM_WORLD, "mesh.xdmf") as file:
             file.write(domain)
 
         with dolfinx.io.XDMFFile(MPI.COMM_WORLD, "mesh.xdmf", "r") as xdmf:
             domain = xdmf.read_mesh()
+
+        self.locs = compute_midpoints(domain, 2, np.arange(domain.topology.index_map(2).size_local, dtype='int32'))
 
         return domain
     
