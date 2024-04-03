@@ -37,8 +37,7 @@ sim.fixedBoundary(topBoundary)
 # sim.fixedBoundary(lefCorner)
 # sim.fixedBoundary(rightCorner)
 sim.applyForce(corner, [0, -1e9])
-xCoords = sim.x
-yCoords = sim.y
+coord = sim.locs
 
 
 def obj(x, plt=False):

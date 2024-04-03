@@ -75,6 +75,7 @@ def plotDensity(msh, density, lim=[0,1]):
 class Simulation:
     def __init__(self, corners, meshDensity = 15) -> None:
         self.corners = corners
+        self.locs = []
         self.domain = self.createPolygonalMesh(corners, meshDensity)
         self.V = VectorFunctionSpace(self.domain, ("Lagrange", 1))
         self.U = FunctionSpace(self.domain, ("DG", 0))
@@ -84,6 +85,11 @@ class Simulation:
         corners = list(map(dolfin.Point, corners))
         domain = Polygon(corners)
         domain = generate_mesh(domain, meshDensity)
+
+        for cell in dolfin.cells(domain,):
+            self.locs.append((cell.midpoint().x(), cell.midpoint().y()))
+        
+        self.locs = np.array(self.locs)
 
         with dolfin.XDMFFile(MPI.COMM_WORLD, "mesh.xdmf") as file:
             file.write(domain)
@@ -104,8 +110,6 @@ class Simulation:
 
     def applyForce(self, f, force):
         def bodyForce(x):
-            self.x=x[0]
-            self.y=x[1]
             c = f(x)
             T = np.stack([force[0]*c, force[1]*c], axis=0)
             return T

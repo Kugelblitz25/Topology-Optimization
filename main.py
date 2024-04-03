@@ -34,11 +34,15 @@ E0 = 190e5
 Emin = 100
 penal = 4
 
+locs = []
 
 def createPolygonalMesh(corners, meshDensity=15):
     corners = list(map(dolfin.Point, corners))
     domain = Polygon(corners)
     domain = generate_mesh(domain, meshDensity)
+
+    for cell in dolfin.cells(domain,):
+        locs.append((cell.index(), cell.midpoint().x(), cell.midpoint().y()))
 
     with dolfin.XDMFFile(MPI.COMM_WORLD, "mesh.xdmf") as file:
         file.write(domain)
@@ -78,6 +82,9 @@ def plot(msh, uh, stresses):
 
 domain = createPolygonalMesh(corners, 70)
 
+
+
+
 V = fem.VectorFunctionSpace(domain, ("Lagrange", 1))
 T = fem.FunctionSpace(domain, ("DG", 0))
 density = fem.Function(T, name="Density")
@@ -85,8 +92,11 @@ u = ufl.TrialFunction(V)
 v = ufl.TestFunction(V)
 f = fem.Function(V, name="Body Force")
 
-densityArr = 7750*(np.arange(domain.topology.index_map(2).size_local)>=1000)
-density.interpolate(lambda _: densityArr)
+densityArr = 7750*(np.arange(domain.topology.index_map(2).size_local))
+density.interpolate(lambda _: np.array(locs)[:,0])
+
+print(np.array(locs).shape, densityArr.shape, locs[0])
+
 
 fdim = domain.topology.dim - 1
 boundary_facets = dolfinx.mesh.locate_entities_boundary(domain, fdim, lambda x: np.isclose(x[1], 15))
