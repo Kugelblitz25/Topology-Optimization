@@ -59,19 +59,52 @@ def gradCalc(sim: Simulation):
     num = -penal*(E0-Emin)*x**(penal-1)*C 
     denom = Emin + x**penal*(E0-Emin)
     grad = num/denom 
+    # grad = 0.01+1e-2*(grad-grad.min())/(grad.max()-grad.min())
     grad = (grad-grad.min())/(grad.max()-grad.min())
+    # print(grad)
     return grad
 
-for i in range(10):
+n_iters = 50
+for i in range(n_iters):
     vol, comp = obj(x)
     print(f"Iteration: {i+1}  Volume Fraction: {vol}, Compliance: {comp}")
     if vol <=50:
         break
+
+    # for j in range(len(sim.density.vector.array)):
+    #     if sim.density.vector.array[j] < 1:
+    #         sim.density.vector.array[j] = 0
+    if i > n_iters/4: 
+        for j in range(len(x)):
+            if x[j] < 0.7 and x[j] >0.5:
+                x[j] = 0
+
     grad = gradCalc(sim)**1000
     x -= 0.1*grad
     mask = x>=0.4
     x = np.where(mask, x, 0)
 
+
 vol, comp = obj(x, True)
 
 plotDensity(sim.domain, sim.density)
+print(type(sim.density), type(sim.domain))
+
+# print(sim.density.vector.array)
+# print(type(sim.density.vector.array))
+
+# print(sim.density.vector.array.shape)
+
+# with open('density_array.txt', 'w') as f:
+#     for i in sim.density.vector.array:
+#         f.write(str(i) + '\n')
+
+# for i in range(len(sim.density.vector.array)):
+#     if sim.density.vector.array[i] < 0.9:
+#         sim.density.vector.array[i] = 0
+
+# with open('density_array_updated.txt', 'w') as f:
+#     for i in sim.density.vector.array:
+#         f.write(str(i) + '\n')
+
+# plotDensity(sim.domain, sim.density)
