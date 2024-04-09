@@ -5,159 +5,115 @@ Author: Vighnesh Nayak
 Date: 07 Mar 2024
 Github: https://github.com/Kugelblitz25
 """
-from mpi4py import MPI
-import dolfinx
-import dolfin
-import pyvista
-import dolfinx.fem as fem
-import ufl
-from mshr import Polygon, generate_mesh
-from dolfinx.fem.petsc import LinearProblem
-import numpy as np
-from dolfinx.geometry import bb_tree, compute_closest_entity, create_midpoint_tree
 
-corners = [[0, 0],
-           [10, 0],
-           [10, 5],
+from backend import Simulation
+from frontend import OptimizerPlot, setThreshold
+import numpy as np
+import matplotlib.pyplot as plt
+
+class TopOpt:
+    def __init__(self, corners: np.ndarray, 
+                 meshDensity: int = 100,
+                 E0: float = 190e9,
+                 Emin:float = 100,
+                 nu: float = 0.3,
+                 penalty: int = 4) -> None:
+        self.simulation = Simulation(corners, meshDensity)
+        self.W = corners[:,0].max() - corners[:,0].min()
+        self.L = corners[:,1].max() - corners[:,1].min()
+        self.density = np.ones(self.simulation.domain.topology.index_map(2).size_local)
+        self.elemLocs = self.simulation.locs
+        self.numElems = len(self.density)
+        self.simulation.createFunctions()
+        self.E = E0
+        self.Emin = Emin
+        self.nu = nu
+        self.penalty = penalty
+
+    def createFixedBoundaries(self, locFunctions: list):
+        self.fixedBoundaries = locFunctions
+        for locFunction in locFunctions:
+            self.simulation.fixedBoundary(locFunction)
+
+    def applyForces(self, forces: dict[tuple, tuple]):
+        self.forces = forces
+        forceTuples = []
+        for loc in forces:
+            forceTuples.append((loc, forces[loc]))
+        self.simulation.applyForce(forceTuples)
+
+    def objectiveFunction(self):
+        self.simulation.density.interpolate(lambda _: self.density)
+        self.simulation.constituentEqns(self.Emin, self.E, self.penalty, self.nu)
+        self.simulation.solve()
+        self.simulation.updateStress()
+        comp = self.simulation.compliance()
+        return comp
+    
+    def normalize(self, vec: np.ndarray):
+        return (vec-vec.min())/(vec.max()-vec.min())
+    
+    def percentileMask(self, vec: np.ndarray, p: float = 50, defaultVal: float = 0):
+        mask = vec >= np.percentile(vec, p)
+        return np.where(mask, vec, defaultVal)
+    
+    def gradient(self):
+        C = self.simulation.complianceArr.vector.array 
+        C = C * self.simulation.domain.h(2,np.arange(len(C), dtype='int32'))
+        num = -self.penalty*(self.E-self.Emin)*self.density**(self.penalty-1)*C 
+        denom = self.Emin + self.density**self.penalty*(self.E-self.Emin)
+        grad = self.normalize(num/denom)**300
+        return self.percentileMask(grad)
+    
+    def gaussianFilter(self, vec: np.ndarray, R: float = 0.3):
+        sigma = R/3
+        def filter(i):
+            mask = (self.elemLocs[i,0]-R<=self.elemLocs[:,0]) & (self.elemLocs[:,0]<=self.elemLocs[i,0]+R) & (self.elemLocs[i,1]-R<=self.elemLocs[:,1]) & (self.elemLocs[:,1]<=self.elemLocs[i,1]+R)
+            y = np.where(mask, vec, 0)
+            weight = np.exp(-((self.elemLocs[:,0]-self.elemLocs[i,0])**2+(self.elemLocs[:,1]-self.elemLocs[i,1])**2)/(2*sigma**2))
+            weight = weight/weight.sum()
+            return (y*weight).sum()
+        filter = np.vectorize(filter)
+        return filter(np.arange(self.numElems))
+    
+    def optimize(self, numIter: int = 50, targetVol: float = 0.5, log: bool = False):
+        vPrev = 2
+        history = []
+        plotter = OptimizerPlot(numIter, targetVol)
+        plotter.init()        
+        for i in range(numIter):
+            comp = self.objectiveFunction()
+            vol = self.density.mean()
+            plotter.update(vol, comp)
+            history.append(self.density)
+            print(f"Iteration: {i+1}  Volume Fraction: {vol}, Compliance: {comp}")
+            if vol <= targetVol or abs(vol-vPrev)<0.0001:
+                break
+            vPrev = vol
+            grad = self.gradient()
+            self.density = np.maximum(0.01, self.density-0.1*grad)
+            self.density = self.gaussianFilter(self.density)
+            self.density = self.normalize(self.density)
+            self.density = self.percentileMask(self.density, 10, 0.01)
+
+        plotter.stop()
+        if log:
+            np.save('history', np.array(history))
+
+        self.density = setThreshold(self.density, self.elemLocs)
+        print(f'Optimization Completed. \nFinal Compliance = {self.objectiveFunction()}')
+        self.simulation.displayDistribustion()
+        self.simulation.displayResult()
+
+corners = np.array([[0, 0],
+           [15, 0],
+           [15, 5],
            [5, 5],
            [5, 15],
-           [0, 15]]
-
-L = 15
-W = 10
-A = 2*10*5*1e-4
-dA = A/(30*30)
-
-g = dA*98
-
-E0 = 190e5
-Emin = 100
-penal = 4
-
-locs = []
-
-def createPolygonalMesh(corners, meshDensity=15):
-    corners = list(map(dolfin.Point, corners))
-    domain = Polygon(corners)
-    domain = generate_mesh(domain, meshDensity)
-
-    for cell in dolfin.cells(domain,):
-        locs.append((cell.index(), cell.midpoint().x(), cell.midpoint().y()))
-
-    with dolfin.XDMFFile(MPI.COMM_WORLD, "mesh.xdmf") as file:
-        file.write(domain)
-
-    with dolfinx.io.XDMFFile(MPI.COMM_WORLD, "mesh.xdmf", "r") as xdmf:
-        domain = xdmf.read_mesh()
-
-    return domain
-
-
-def plot(msh, uh, stresses):
-    if pyvista.OFF_SCREEN:
-        pyvista.start_xvfb(wait=0.1)
-
-    p = pyvista.Plotter()
-
-    topology, cell_types, geometry = dolfinx.plot.vtk_mesh(
-        msh, msh.topology.dim)
-    grid = pyvista.UnstructuredGrid(topology, cell_types, geometry)
-
-    # p.add_mesh(grid, show_edges=True)
-
-    grid["u"] = uh.x.array.reshape((geometry.shape[0], 2))
-    z = np.zeros(len(grid['u']))
-    grid['u'] = np.c_[grid["u"], z]
-    warped = grid.warp_by_vector("u", factor=0)
-
-    warped.cell_data["VonMises"] = stresses.vector.array
-    warped.set_active_scalars("VonMises")
-    plt = p.add_mesh(warped, show_edges=True)
-    plt = p.add_camera_orientation_widget()
-    if not pyvista.OFF_SCREEN:
-        p.show()
-    else:
-        print("Unable to show plot.")
-
-
-domain = createPolygonalMesh(corners, 70)
-
-
-
-
-V = fem.VectorFunctionSpace(domain, ("Lagrange", 1))
-T = fem.FunctionSpace(domain, ("DG", 0))
-density = fem.Function(T, name="Density")
-u = ufl.TrialFunction(V)
-v = ufl.TestFunction(V)
-f = fem.Function(V, name="Body Force")
-
-densityArr = 7750*(np.arange(domain.topology.index_map(2).size_local))
-density.interpolate(lambda _: np.array(locs)[:,0])
-
-print(np.array(locs).shape, densityArr.shape, locs[0])
-
-
-fdim = domain.topology.dim - 1
-boundary_facets = dolfinx.mesh.locate_entities_boundary(domain, fdim, lambda x: np.isclose(x[1], 15))
-
-u_D = np.array([0, 0], dtype=dolfinx.default_scalar_type)
-bc = fem.dirichletbc(u_D, fem.locate_dofs_topological(V, fdim, boundary_facets), V)
-
-def bodyForce(x):
-    print(x[0], x[1])
-    print(domain.topology.connectivity(domain.topology.dim, 0).array)
-    x0 = x.T
-    tree = bb_tree(domain, domain.geometry.dim)
-    entities = np.arange(domain.topology.index_map(2).size_local, dtype='int32')
-    midTree = create_midpoint_tree(domain, 2, entities)
-    cells = compute_closest_entity(tree, midTree, domain, x0)
-    d = density.eval(x0, cells)[:, 0]
-    def oncorner(x):
-        return np.isclose(x[0], 10) & np.isclose(x[1], 0)
-    c = oncorner(x)
-    B = np.stack([0*d, -g*d], axis=0)
-    T = np.stack([0*c, -1e6*c], axis=0)
-    return T
-
-f.interpolate(bodyForce)
-
-# Update the traction vector
-T = fem.Constant(domain, dolfinx.default_scalar_type((0, 0)))
-
-E = Emin + density**penal*(E0-Emin)
-nu = 0.3
-lambda_ = E*nu/(1+nu)/(1-2*nu)
-mu = E/(2*(1+nu))
-
-ds = ufl.Measure('ds', domain=domain)
-dx = ufl.dx
-
-def epsilon(u):
-    return ufl.sym(ufl.grad(u))
-
-def sigma(u):
-    return lambda_ * ufl.nabla_div(u) * ufl.Identity(len(u)) + 2 * mu * epsilon(u)
-
-a = ufl.inner(sigma(u), epsilon(v)) * ufl.dx
-L = ufl.dot(f, v) * ufl.dx + ufl.dot(T, v) * ds
-
-print("Formulation Completed.")
-problem = LinearProblem(a, L, bcs=[bc], petsc_options={"ksp_type": "preonly", "pc_type": "lu"})
-uh = problem.solve()
-
-s = sigma(uh) - 1. / 3 * ufl.tr(sigma(uh)) * ufl.Identity(len(uh))
-von_Mises = ufl.sqrt(3. / 2 * ufl.inner(s, s))
-
-V_von_mises = fem.FunctionSpace(domain, ("DG", 0))
-stress_expr = fem.Expression(von_Mises, V_von_mises.element.interpolation_points())
-stresses = fem.Function(V_von_mises)
-stresses.interpolate(stress_expr)
-
-VOL = MPI.COMM_WORLD.allreduce(fem.assemble_scalar(fem.form(density*ufl.dx)),op=MPI.SUM)/7750
-print(f"Volume fraction: {VOL}")
-
-compliance = MPI.COMM_WORLD.allreduce(fem.assemble_scalar(fem.form(ufl.inner(sigma(uh), epsilon(uh)) * ufl.dx)),op=MPI.SUM)
-print(f"Compliance: {compliance}")
-
-plot(domain, uh, density)
+           [0, 15]])
+topBoundary = lambda x: np.isclose(x[1], 15)
+forces = {(15, 5): (0, -1e3)}
+opt = TopOpt(corners)
+opt.createFixedBoundaries([topBoundary])
+opt.applyForces(forces)
+opt.optimize(log= True)
