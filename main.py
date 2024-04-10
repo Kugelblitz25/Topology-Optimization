@@ -7,9 +7,9 @@ Github: https://github.com/Kugelblitz25
 """
 
 from backend import Simulation
-from frontend import OptimizerPlot, setThreshold
+from frontend import OptimizerPlot, setThreshold, saveAnimation
 import numpy as np
-import matplotlib.pyplot as plt
+
 
 class TopOpt:
     def __init__(self, corners: np.ndarray, 
@@ -76,7 +76,10 @@ class TopOpt:
         filter = np.vectorize(filter)
         return filter(np.arange(self.numElems))
     
-    def optimize(self, numIter: int = 50, targetVol: float = 0.5, log: bool = False):
+    def optimize(self, numIter: int = 50, 
+                       targetVol: float = 0.5, 
+                       saveResult: bool = True, 
+                       animate: bool = False):
         vPrev = 2
         history = []
         plotter = OptimizerPlot(numIter, targetVol)
@@ -97,13 +100,21 @@ class TopOpt:
             self.density = self.percentileMask(self.density, 10, 0.01)
 
         plotter.stop()
-        if log:
-            np.save('history', np.array(history))
-
         self.density = setThreshold(self.density, self.elemLocs)
+        
         print(f'Optimization Completed. \nFinal Compliance = {self.objectiveFunction()}')
-        self.simulation.displayDistribustion()
+        self.simulation.displayDistribution()
         self.simulation.displayResult()
+
+        if saveResult:
+            result = np.empty((3, self.numElems))
+            result[:2, :] = self.elemLocs[:2, :]
+            result[2, :] = self.density
+            np.save('result', result)
+
+        if animate:
+            saveAnimation(history, self.elemLocs)
+
 
 corners = np.array([[0, 0],
            [15, 0],
@@ -113,7 +124,7 @@ corners = np.array([[0, 0],
            [0, 15]])
 topBoundary = lambda x: np.isclose(x[1], 15)
 forces = {(15, 5): (0, -1e3)}
-opt = TopOpt(corners)
+opt = TopOpt(corners, meshDensity=70)
 opt.createFixedBoundaries([topBoundary])
 opt.applyForces(forces)
-opt.optimize(log= True)
+opt.optimize(targetVol=0.3,animate=True)

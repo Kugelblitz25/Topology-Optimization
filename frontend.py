@@ -1,6 +1,9 @@
 import matplotlib.pyplot as plt
 import matplotlib.widgets as wid
+from matplotlib.animation import FuncAnimation
 import numpy as np
+
+plt.rcParams['animation.ffmpeg_path'] = "/mnt/d/files/ffmpeg/bin/ffmpeg.exe"
 
 class OptimizerPlot:
     def __init__(self, numIter: int, volumeThreshold: float):
@@ -93,3 +96,18 @@ def setThreshold(density: np.ndarray, coords: np.ndarray):
 
     plt.show()
     return optDensity
+
+def saveAnimation(history: np.ndarray, coords: np.ndarray):
+    fig, ax = plt.subplots(figsize=(15,10))
+    ax.set_aspect('equal')
+    scat = ax.scatter(coords[:,0], coords[:,1], marker='o')
+    scat.set_cmap('gray')
+    nFrames = history.shape[0]
+    def animate(i):
+        nonlocal scat, history
+        scat.set_array(1-history[i+1,:])
+        return scat,
+    
+    anim = FuncAnimation(fig, animate, range(nFrames-1), interval=250)
+    anim.save('descent.mp4', writer='ffmpeg')
+    print('Animation saved in descent.mp4')
