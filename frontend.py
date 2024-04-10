@@ -30,13 +30,14 @@ class OptimizerPlot:
 
         self.compPlot,  = axes[1].plot([], [], color = 'b', marker='.')
         axes[1].set_xlim([0, self.n])
+        axes[1].set_ylim(bottom = 0, auto = True)
         axes[1].set_title('Compliance', fontweight = 'bold', fontsize=16)
         axes[1].set_xlabel('Iterartion')
         axes[1].set_ylabel('Compliance')
 
     def update(self, volume, compliance):
         self.volumes.append(volume*100)
-        self.comps.append(compliance*1e6)
+        self.comps.append(compliance)
         self.i += 1
         self.volumePlot.set_data([np.arange(self.i), self.volumes])
         self.compPlot.set_data([np.arange(self.i), self.comps])

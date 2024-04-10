@@ -108,12 +108,12 @@ class TopOpt:
 
         if saveResult:
             result = np.empty((3, self.numElems))
-            result[:2, :] = self.elemLocs[:2, :]
+            result[:2, :] = self.elemLocs[:, :2].T
             result[2, :] = self.density
             np.save('result', result)
 
         if animate:
-            saveAnimation(history, self.elemLocs)
+            saveAnimation(np.array(history), self.elemLocs)
 
 
 corners = np.array([[0, 0],
