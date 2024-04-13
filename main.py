@@ -78,6 +78,7 @@ class TopOpt:
     
     def optimize(self, numIter: int = 50, 
                        targetVol: float = 0.5, 
+                       lr: float = 0.1,
                        saveResult: bool = True, 
                        animate: bool = False):
         vPrev = 2
@@ -94,7 +95,7 @@ class TopOpt:
                 break
             vPrev = vol
             grad = self.gradient()
-            self.density = np.maximum(0.01, self.density-0.1*grad)
+            self.density = np.maximum(0.01, self.density-lr*grad)
             self.density = self.gaussianFilter(self.density)
             self.density = self.normalize(self.density)
             self.density = self.percentileMask(self.density, 10, 0.01)
@@ -115,16 +116,31 @@ class TopOpt:
         if animate:
             saveAnimation(np.array(history), self.elemLocs)
 
+def optimLBrac():
+    corners = np.array([[0, 0],
+            [15, 0],
+            [15, 5],
+            [5, 5],
+            [5, 15],
+            [0, 15]])
+    topBoundary = lambda x: np.isclose(x[1], 15)
+    forces = {(15, 5): (0, -1e3)}
+    opt = TopOpt(corners, meshDensity=70)
+    opt.createFixedBoundaries([topBoundary])
+    opt.applyForces(forces)
+    opt.optimize(targetVol=0.3,animate=True)
 
-corners = np.array([[0, 0],
-           [15, 0],
-           [15, 5],
-           [5, 5],
-           [5, 15],
-           [0, 15]])
-topBoundary = lambda x: np.isclose(x[1], 15)
-forces = {(15, 5): (0, -1e3)}
-opt = TopOpt(corners, meshDensity=70)
-opt.createFixedBoundaries([topBoundary])
-opt.applyForces(forces)
-opt.optimize(targetVol=0.3,animate=True)
+def optimBridge():
+    corners = np.array([[0, 0],
+                        [50, 0],
+                        [50, 10],
+                        [0, 10]])
+    leftBoundary = lambda x: np.isclose(x[0], 0)
+    forces = {(50, 0): (0, -1e3)}
+    opt = TopOpt(corners, meshDensity=100)
+    opt.createFixedBoundaries([leftBoundary])
+    opt.applyForces(forces)
+    opt.optimize(targetVol=0.4,animate=True,lr=0.05)
+
+if __name__ == "__main__":
+    optimBridge()
