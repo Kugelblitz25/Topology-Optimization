@@ -56,13 +56,21 @@ class Simulation:
         self.vm = Function(self.U, name="Von Mises Stress")
         self.complianceArr = Function(self.U, name="Compliance")
 
-    def fixedBoundary(self, f):
+    def fixedJoint(self, f):
         fdim = self.domain.topology.dim - 1
         boundary_facets = locate_entities_boundary(self.domain, fdim, f)
 
         u_D = np.array([0, 0], dtype=dolfinx.default_scalar_type)
         dofs = locate_dofs_topological(self.V, fdim, boundary_facets)
+        print(len(dofs))
         self.bcs.append(dirichletbc(u_D, dofs, self.V))
+
+    def rollingJoint(self, f):
+        fdim = self.domain.topology.dim - 1
+        boundary_facets = locate_entities_boundary(self.domain, fdim, f)
+
+        dofs = locate_dofs_topological(self.V.sub(1), fdim, boundary_facets)
+        self.bcs.append(dirichletbc(dolfinx.default_scalar_type(0), dofs, self.V.sub(1)))
 
     def applyForce(self, forces):
         def bodyForce(x):
