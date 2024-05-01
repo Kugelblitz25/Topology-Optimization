@@ -15,32 +15,32 @@ class OptimizerPlot:
 
     def init(self):
         plt.ion()
-        fig, axes = plt.subplots(1, 2, figsize=(10,5))
-        axes = axes.flatten()
+        fig, axes = plt.subplots(1, 1, figsize=(10,10))
+        # axes = axes.flatten()
         fig.canvas.draw()
         self.figure = fig
         
-        self.volumePlot, = axes[0].plot([], [], color = 'b', marker='.')
-        axes[0].set_xlim([0, self.n])
-        axes[0].set_ylim([self.volThresh-10, 101])
-        axes[0].set_title('Volume Fraction', fontweight = 'bold', fontsize=16)
-        axes[0].set_xlabel('Iterartion')
-        axes[0].set_ylabel('Volume Fraction (%)')
-        axes[0].hlines(self.volThresh, 0, self.n, color='r', zorder=2)
+        self.volumePlot, = axes.plot([], [], color = 'b', marker='.')
+        axes.set_xlim([0, self.n])
+        axes.set_ylim([self.volThresh-10, 101])
+        axes.set_title('Volume Fraction', fontweight = 'bold', fontsize=16)
+        axes.set_xlabel('Iterartion')
+        axes.set_ylabel('Volume Fraction (%)')
+        axes.hlines(self.volThresh, 0, self.n, color='r', zorder=2)
 
-        self.compPlot,  = axes[1].plot([], [], color = 'b', marker='.')
-        axes[1].set_xlim([0, self.n])
-        axes[1].set_ylim(bottom = 0, auto = True)
-        axes[1].set_title('Compliance', fontweight = 'bold', fontsize=16)
-        axes[1].set_xlabel('Iterartion')
-        axes[1].set_ylabel('Compliance')
+        # self.compPlot,  = axes[1].plot([], [], color = 'b', marker='.')
+        # axes[1].set_xlim([0, self.n])
+        # axes[1].set_ylim(bottom = 0, auto = True)
+        # axes[1].set_title('Compliance', fontweight = 'bold', fontsize=16)
+        # axes[1].set_xlabel('Iterartion')
+        # axes[1].set_ylabel('Compliance')
 
     def update(self, volume, compliance):
         self.volumes.append(volume*100)
         self.comps.append(compliance)
         self.i += 1
         self.volumePlot.set_data([np.arange(self.i), self.volumes])
-        self.compPlot.set_data([np.arange(self.i), self.comps])
+        # self.compPlot.set_data([np.arange(self.i), self.comps])
         self.figure.canvas.flush_events()
 
     def stop(self):
